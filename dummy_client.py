@@ -13,7 +13,7 @@ from collections import defaultdict
 from random import gauss, randint
 from math import pi, sin, sqrt
 from time import time as now
-import asyncio, pprint
+import asyncio
 
 SAMPLE_PERIOD = 1
 MEASUREMENT_PERIOD = 5
@@ -29,38 +29,31 @@ class Measurement():
     def add(self, channel):
         n, a, d = channel
         self.channels[n] = {"name": n, "average":a, "stddev":d}
-    def __repr__(self):
-        return f"{self.duration} {self.channels}"
     def serialize(self):
         return list(self.channels.values())
 
 class Message():
-    def __init__(self, dev_id, password, token):
+    def __init__(self, dev_id, password):
         self.dev_id = dev_id
         self.password = password
-        self.token = token
+        self.token = None
         self.measurement = defaultdict(partial(Measurement, MEASUREMENT_PERIOD*1000))
     def add(self, sample):
         t, n, a, d = sample
         mm = self.measurement[int(t)]
         mm.add((n,a,d))
-    def __str__(self):
-        return f"{self.dev_id} {self.password} {self.token} {self.measurement}"
     def serialize(self):
-        l = []
-        for t, mm in self.measurement.items():
-            l.append({"timestamp":t, "duration":mm.duration, "channels":mm.serialize()})
-
-        return {"device id": self.dev_id, "password": self.password,\
-                "token":self.token, "measurement":l}
+        l = [{"timestamp":t, "duration":mm.duration, "channels":mm.serialize()}
+            for t, mm in self.measurement.items()]
+        m = {"device id": self.dev_id, "password": self.password, "measurement":l}
+        if self.token: m["token"] = self.token
+        return m
 
 async def take_sample(samplequeue):
     OFFSET = randint(0, SIN_PERIOD)
-    #every second
     while True:
         sample = (now()*2*pi)/SIN_PERIOD
         sample = gauss(sin(sample+OFFSET)*SIN_AMPLITUDE, SIN_NOISE)
-        #print(f"push sample {sample}")
         await samplequeue.put(sample)
         await asyncio.sleep(SAMPLE_PERIOD)
 
@@ -68,7 +61,7 @@ def flush_queue(queue):
     r = []
     while not queue.empty():
         r.append(queue.get_nowait())
-    print("Found {} samples".format(len(r)))
+    log.debug("Found {} samples".format(len(r)))
     return r
 
 async def collect_measurement(channelname, measurementqueue):
@@ -86,6 +79,7 @@ async def collect_measurement(channelname, measurementqueue):
         await asyncio.sleep(MEASUREMENT_PERIOD)
 
 async def submitter(args, msgqueue):
+    TOKEN = None
     if args.no_ssl:
         HOST = f'http://{args.host}:{args.port}/API'
         VERIFY = None
@@ -96,25 +90,24 @@ async def submitter(args, msgqueue):
     if args.no_auth:
         AUTH = None
     else:
-        AUTH = (args.user,args.password)
+        AUTH = (args.user, args.password)
 
     while True:
         msg = await msgqueue.get()
-        js = json.dumps(msg.serialize(), indent=4)
-        print(js)
+        msg.token = TOKEN
+        log.info(json.dumps(msg.serialize(), indent=4))
         try:
             loop = asyncio.get_event_loop()
-            future1 = loop.run_in_executor(None, partial(requests.post, HOST, data=msg.serialize(), verify=VERIFY, auth=AUTH))
+            future1 = loop.run_in_executor(None, partial(requests.post, HOST,
+                data = json.dumps(msg.serialize()), verify=VERIFY, auth=AUTH))
             r = await future1
-            #print(response1.text)
-
-            #r = requests.post(HOST, data=msg.serialize(), verify=VERIFY, auth=AUTH)
         except requests.exceptions.ConnectionError as e:
             log.error(f'aborted by host {e}')
             continue
-        log.debug(f"response: ({r.status_code}) {r.reason}")
-        #if r.status_code != 200:
-            #return 10
+        log.info(f"response: ({r.status_code}) {r.reason}")
+        if r.status_code != 200:
+            log.error("submission failed, purging measurement.")
+        #TODO get new TOKEN
 
 async def main(args):
     measurementqueue = asyncio.Queue()
@@ -123,33 +116,45 @@ async def main(args):
     asyncio.create_task(collect_measurement("voltage",   measurementqueue))
     asyncio.create_task(collect_measurement("frequency", measurementqueue))
     asyncio.create_task(submitter(args, msgqueue))
-    ## todo every submit period collect all samples
     while True:
         await asyncio.sleep(SUBMIT_PERIOD)
         measurements = flush_queue(measurementqueue)
         if not measurements: continue
-        msg = Message("00", "pw", "tok")
+        msg = Message(args.user, args.password)
         for mm in measurements:
             msg.add(mm)
         await msgqueue.put(msg)
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Measurement relay agent", epilog="2019 - KapiteinLabs - yuri@kapiteinlabs.com")
+    parser = argparse.ArgumentParser(description="Measurement relay agent", 
+            epilog="2019 - KapiteinLabs - yuri@kapiteinlabs.com")
     parser.add_argument("-l", "--log-level", help="Set loglevel",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         type=str.upper, action="store", default="INFO")
-    parser.add_argument("-H", "--host", help="IP/hostname to submit to", action="store", type=str, default="localhost")
-    parser.add_argument("-P", "--port", help="TCP port to submit to", action="store", type=int, default=80)
-    #parser.add_argument("-d", "--device", help="Serial device to sample", action="store", type=str, default=DEFAULT_DEVICE)
-    #parser.add_argument("-i", "--submission-interval", help="Interval in seconds between submissions", action="store", type=int, default=D_DEFAULT_SUBMISSION_INTERVAL)
-    #parser.add_argument("-s", "--sample-interval", help="Interval in seconds between samples", action="store", type=int, default=D_DEFAULT_SAMPLE_INTERVAL)
+    parser.add_argument("-H", "--host", help="IP/hostname to submit to",
+            action="store", type=str, default="localhost")
+    parser.add_argument("-P", "--port", help="TCP port to submit to",
+            action="store", type=int, default=80)
+    #parser.add_argument("-d", "--device", help="Serial device to sample",
+        #action="store", type=str, default=DEFAULT_DEVICE)
+    #parser.add_argument("-i", "--submission-interval",
+        #help="Interval in seconds between submissions", action="store",
+        #type=int, default=D_DEFAULT_SUBMISSION_INTERVAL)
+    #parser.add_argument("-s", "--sample-interval",
+        #help="Interval in seconds between samples", action="store",
+        #type=int, default=D_DEFAULT_SAMPLE_INTERVAL)
 
     ## HTTP related
-    parser.add_argument("-c", "--cert", help="Server certificate", action="store", type=str, default='cert.pem')
-    parser.add_argument("-u", "--user", help="HTTP user", action="store", type=str, default='yuri')
-    parser.add_argument("-p", "--password", help="HTTP password", action="store", type=str, default='pwd!')
-    parser.add_argument("-n", "--no-ssl", help="Disable HTTPS", action="store_true")
-    parser.add_argument("-N", "--no-auth", help="Disable HTTP authentication", action="store_true")
+    parser.add_argument("-c", "--cert", help="Server certificate",
+        action="store", type=str, default='cert.pem')
+    parser.add_argument("-u", "--user", help="HTTP user", action="store",
+        type=str, default='yuri')
+    parser.add_argument("-p", "--password", help="HTTP password",
+        action="store", type=str, default='pwd!')
+    parser.add_argument("-n", "--no-ssl", help="Disable HTTPS",
+        action="store_true")
+    parser.add_argument("-N", "--no-auth", help="Disable HTTP authentication",
+        action="store_true")
     return parser.parse_args()
 
 def setup(args):
