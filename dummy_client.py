@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-## sample randomness, 
-
 import requests
 import os, sys, argparse
 import logging as log
@@ -15,10 +13,12 @@ from math import pi, sin, sqrt
 from time import time as now
 import asyncio
 
-SAMPLE_PERIOD = 1
-MEASUREMENT_PERIOD = 5
-SUBMIT_PERIOD = 10
-SIN_PERIOD = 600
+D_DEFAULT_SAMPLE_INTERVAL = 1
+D_DEFAULT_DOWNSAMPLE_INTERVAL = 10
+D_DEFAULT_SUBMISSION_INTERVAL = 60
+
+## parameters for mockup data
+SIN_PERIOD = 1800 ## full sinusoid every half hour
 SIN_AMPLITUDE = 200
 SIN_NOISE = 10
 
@@ -33,11 +33,11 @@ class Measurement():
         return list(self.channels.values())
 
 class Message():
-    def __init__(self, dev_id, password):
+    def __init__(self, dev_id, password, period_ms):
         self.dev_id = dev_id
         self.password = password
         self.token = None
-        self.measurement = defaultdict(partial(Measurement, MEASUREMENT_PERIOD*1000))
+        self.measurement = defaultdict(partial(Measurement, period_ms))
     def add(self, sample):
         t, n, a, d = sample
         mm = self.measurement[int(t)]
@@ -55,7 +55,7 @@ async def take_sample(samplequeue):
         sample = (now()*2*pi)/SIN_PERIOD
         sample = gauss(sin(sample+OFFSET)*SIN_AMPLITUDE, SIN_NOISE)
         await samplequeue.put(sample)
-        await asyncio.sleep(SAMPLE_PERIOD)
+        await asyncio.sleep(args.sample_interval)
 
 def flush_queue(queue):
     r = []
@@ -64,7 +64,7 @@ def flush_queue(queue):
     log.debug("Found {} samples".format(len(r)))
     return r
 
-async def collect_measurement(channelname, measurementqueue):
+async def collect_measurement(args, channelname, measurementqueue):
     samplequeue = asyncio.Queue()
     asyncio.create_task(take_sample(samplequeue))
     while True:
@@ -76,7 +76,7 @@ async def collect_measurement(channelname, measurementqueue):
             s_std = sqrt(sum([(s - s_avg)**2 for s in samples]) / s_cnt)
             measurement = (now(), channelname, s_avg, s_std)
             await measurementqueue.put(measurement)
-        await asyncio.sleep(MEASUREMENT_PERIOD)
+        await asyncio.sleep(args.downsample_interval)
 
 async def submitter(args, msgqueue):
     TOKEN = None
@@ -112,15 +112,15 @@ async def submitter(args, msgqueue):
 async def main(args):
     measurementqueue = asyncio.Queue()
     msgqueue = asyncio.Queue()
-    asyncio.create_task(collect_measurement("current",   measurementqueue))
-    asyncio.create_task(collect_measurement("voltage",   measurementqueue))
-    asyncio.create_task(collect_measurement("frequency", measurementqueue))
+    asyncio.create_task(collect_measurement(args, "current",   measurementqueue))
+    asyncio.create_task(collect_measurement(args, "voltage",   measurementqueue))
+    asyncio.create_task(collect_measurement(args, "frequency", measurementqueue))
     asyncio.create_task(submitter(args, msgqueue))
     while True:
-        await asyncio.sleep(SUBMIT_PERIOD)
+        await asyncio.sleep(args.submission_interval)
         measurements = flush_queue(measurementqueue)
         if not measurements: continue
-        msg = Message(args.user, args.password)
+        msg = Message(args.user, args.password, args.downsample_interval*1000)
         for mm in measurements:
             msg.add(mm)
         await msgqueue.put(msg)
@@ -137,12 +137,15 @@ def parse_arguments():
             action="store", type=int, default=80)
     #parser.add_argument("-d", "--device", help="Serial device to sample",
         #action="store", type=str, default=DEFAULT_DEVICE)
-    #parser.add_argument("-i", "--submission-interval",
-        #help="Interval in seconds between submissions", action="store",
-        #type=int, default=D_DEFAULT_SUBMISSION_INTERVAL)
-    #parser.add_argument("-s", "--sample-interval",
-        #help="Interval in seconds between samples", action="store",
-        #type=int, default=D_DEFAULT_SAMPLE_INTERVAL)
+    parser.add_argument("-i", "--submission-interval",
+        help="Interval in seconds between submissions", action="store",
+        type=int, default=D_DEFAULT_SUBMISSION_INTERVAL)
+    parser.add_argument("-s", "--sample-interval",
+        help="Interval in seconds between samples", action="store",
+        type=int, default=D_DEFAULT_SAMPLE_INTERVAL)
+    parser.add_argument("-d", "--downsample-interval",
+        help="Aggragation period", action="store",
+        type=int, default=D_DEFAULT_DOWNSAMPLE_INTERVAL)
 
     ## HTTP related
     parser.add_argument("-c", "--cert", help="Server certificate",
