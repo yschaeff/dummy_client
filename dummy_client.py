@@ -16,7 +16,7 @@ import asyncio
 D_DEFAULT_SAMPLE_INTERVAL = 1
 D_DEFAULT_DOWNSAMPLE_INTERVAL = 10
 D_DEFAULT_SUBMISSION_INTERVAL = 60
-API = "/API/api/Log"
+API = "/API/device/Log"
 
 ## parameters for mockup data
 SIN_PERIOD = 1800 ## full sinusoid every half hour
