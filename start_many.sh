@@ -23,7 +23,7 @@ COUNT=$2
 NAME=$(hostname)
 PIDS=()
 
-for ((i=0; i<COUNT; i++)); do
+for ((i=START; i<START+COUNT; i++)); do
     echo -n starting device_${NAME}_$i
     python3 dummy_client.py --log-level debug --no-ssl --no-auth --host 85.214.92.70 --user $i --password "password$i"  --submission-interval 30 --sample-interval 1 --downsample-interval 3 2> device_${NAME}_$i.log &
     PID=$!
