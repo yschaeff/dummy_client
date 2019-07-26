@@ -46,7 +46,7 @@ class Message():
     def serialize(self):
         l = [{"timestamp":t, "duration":mm.duration, "channels":mm.serialize()}
             for t, mm in self.measurement.items()]
-        m = {"device_id": self.dev_id, "password": self.password, "measurement":l}
+        m = {"device_id": int(self.dev_id), "password": self.password, "measurement":l}
         if self.token: m["token"] = self.token
         return m
 
@@ -92,7 +92,7 @@ async def submitter(args, msgqueue):
         AUTH = None
     else:
         AUTH = (args.user, args.password)
-
+    HEADERS = {'Content-type': 'application/json', 'Accept': 'application/json'}
     while True:
         msg = await msgqueue.get()
         msg.token = TOKEN
@@ -100,7 +100,7 @@ async def submitter(args, msgqueue):
         try:
             loop = asyncio.get_event_loop()
             future1 = loop.run_in_executor(None, partial(requests.post, HOST,
-                data = json.dumps(msg.serialize()), verify=VERIFY, auth=AUTH))
+                data = json.dumps(msg.serialize()), headers=HEADERS, verify=VERIFY, auth=AUTH))
             r = await future1
         except requests.exceptions.ConnectionError as e:
             log.error(f'aborted by host {e}')
