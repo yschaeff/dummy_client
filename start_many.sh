@@ -1,6 +1,6 @@
 #!/bin/bash
 
-COUNT=4
+COUNT=10
 
 NAME=$(hostname)
 PIDS=()
