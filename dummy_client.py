@@ -16,6 +16,7 @@ import asyncio
 D_DEFAULT_SAMPLE_INTERVAL = 1
 D_DEFAULT_DOWNSAMPLE_INTERVAL = 10
 D_DEFAULT_SUBMISSION_INTERVAL = 60
+API = "/API/api/Log"
 
 ## parameters for mockup data
 SIN_PERIOD = 1800 ## full sinusoid every half hour
@@ -45,7 +46,7 @@ class Message():
     def serialize(self):
         l = [{"timestamp":t, "duration":mm.duration, "channels":mm.serialize()}
             for t, mm in self.measurement.items()]
-        m = {"device id": self.dev_id, "password": self.password, "measurement":l}
+        m = {"device_id": self.dev_id, "password": self.password, "measurement":l}
         if self.token: m["token"] = self.token
         return m
 
@@ -81,10 +82,10 @@ async def collect_measurement(args, channelname, measurementqueue):
 async def submitter(args, msgqueue):
     TOKEN = None
     if args.no_ssl:
-        HOST = f'http://{args.host}:{args.port}/API'
+        HOST = f'http://{args.host}:{args.port}{API}'
         VERIFY = None
     else:
-        HOST = f'https://{args.host}:{args.port}/API'
+        HOST = f'https://{args.host}:{args.port}{API}'
         VERIFY = args.cert
 
     if args.no_auth:

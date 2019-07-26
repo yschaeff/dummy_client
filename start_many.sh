@@ -1,13 +1,31 @@
 #!/bin/bash
 
-COUNT=10
+for i in "$@"; do
+    case $i in
+        -h|--help)
+            echo "Usage: ./start_many.sh [--help|-h] <START> <COUNT>"
+            exit 0
+        ;;
+        -*)
+            echo "invalid option '$i'. Call with --help"
+            exit 1
+        ;;
+        *)
+            [[ "$i" =~ ^[0-9]+$ ]] && continue
+            echo "expect uint, got '$i'"
+            exit 2
+    esac
+done
+
+START=$1
+COUNT=$2
 
 NAME=$(hostname)
 PIDS=()
 
 for ((i=0; i<COUNT; i++)); do
     echo -n starting device_${NAME}_$i
-    python3 dummy_client.py --log-level debug --no-ssl --no-auth --host 85.214.92.70 --user device_${NAME}_$i --password "super secret"  --submission-interval 30 --sample-interval 1 --downsample-interval 3 2> device_${NAME}_$i.log &
+    python3 dummy_client.py --log-level debug --no-ssl --no-auth --host 85.214.92.70 --user $i --password "password$i"  --submission-interval 30 --sample-interval 1 --downsample-interval 3 2> device_${NAME}_$i.log &
     PID=$!
     PIDS+="$PID "
     echo " (PID: $PID)"
