@@ -119,7 +119,15 @@ async def submitter(args, msgqueue):
             response = json.loads(r.text)
             for key, value in response.items():
                 log.info(f"\t {key}: {value}")
-            TOKEN = response["Data"]
+            if "Data" in response:
+                T = response["Data"]
+                if T != TOKEN:
+                    log.info("Token expired and updated")
+                    TOKEN = T
+                else:
+                    log.debug("Token still the same")
+            else:
+                log.info("keeping old token")
 
         #TODO get new TOKEN
 
