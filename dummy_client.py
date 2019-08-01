@@ -107,7 +107,10 @@ async def submitter(args, msgqueue):
             log.error(f'aborted by host {e}')
             continue
         log.info(f"response: ({r.status_code})\n\t{r.reason}\n\t{r.text}")
-        if r.status_code != 200:
+        if r.status_code == 401:
+            log.error("Server denied access, clearing token")
+            TOKEN = None
+        elif r.status_code != 200:
             log.error("submission failed, purging measurement.")
             response = json.loads(r.text)
             if type(response) == str:
