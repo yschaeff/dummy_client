@@ -46,7 +46,8 @@ class Message():
     def serialize(self):
         l = [{"timestamp":t, "duration":mm.duration, "channels":mm.serialize()}
             for t, mm in self.measurement.items()]
-        m = {"device_id": int(self.dev_id), "password": self.password, "measurement":l}
+        #m = {"device_id": int(self.dev_id), "password": self.password, "measurement":l}
+        m = {"device_id": self.dev_id, "password": self.password, "measurement":l}
         if self.token: m["token"] = self.token
         return m
 
@@ -105,9 +106,21 @@ async def submitter(args, msgqueue):
         except requests.exceptions.ConnectionError as e:
             log.error(f'aborted by host {e}')
             continue
-        log.info(f"response: ({r.status_code}) {r.reason}")
+        log.info(f"response: ({r.status_code})\n\t{r.reason}\n\t{r.text}")
         if r.status_code != 200:
             log.error("submission failed, purging measurement.")
+            response = json.loads(r.text)
+            if type(response) == str:
+                log.error(f"{response} (no JSON!)")
+            else:
+                for key, value in response.items():
+                    log.error(f"{key}: {value}")
+        else:
+            response = json.loads(r.text)
+            for key, value in response.items():
+                log.info(f"\t {key}: {value}")
+            TOKEN = response["Data"]
+
         #TODO get new TOKEN
 
 async def main(args):
