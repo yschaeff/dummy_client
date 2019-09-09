@@ -138,7 +138,7 @@ async def main(args):
     measurementqueue = asyncio.Queue()
     msgqueue = asyncio.Queue()
     asyncio.create_task(collect_measurement(args, "current",   measurementqueue))
-    asyncio.create_task(collect_measurement(args, "voltage",   measurementqueue))
+    asyncio.create_task(collect_measurement(args, "potential",   measurementqueue))
     asyncio.create_task(collect_measurement(args, "frequency", measurementqueue))
     asyncio.create_task(submitter(args, msgqueue))
     while True:
